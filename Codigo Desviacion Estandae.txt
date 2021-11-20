@@ -1,0 +1,10 @@
+private double DesviacionEstandar()
+        {
+            double ds = 0, sumatoria = 0;
+            foreach (var num in datos)
+            {
+                sumatoria += Math.Pow(num - media, 2);
+            }
+            ds = Math.Sqrt(sumatoria / datos.Count);
+            return ds;
+        }
