@@ -29,6 +29,12 @@ namespace SimulacionCOVID_19
             get;
             set;
         } = new List<string>();
+
+        public List<int> HistorialOxigenacion
+        {
+            get;
+            set;
+        } = new List<int>();
         public List<string> Sintomas
         {
             get;

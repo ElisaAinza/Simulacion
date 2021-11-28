@@ -267,5 +267,17 @@
   <ItemGroup>
     <None Include="Resources\mujerSaludable.gif" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\hombreOxigeno.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\mujerOOxigeno.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\mujerOxigeno.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\hombreOOxigeno.png" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

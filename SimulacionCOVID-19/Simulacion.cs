@@ -29,14 +29,32 @@ namespace SimulacionCOVID_19
         //Poblacion de mexico 126014024, con 99 % confiabilidad y con margen de error de 5% = 666
         public int CantidadPacientes = 666;// muestra poblacion de mexico 
         List<ClsPaciente> Pacientes;
+        List<ClsPaciente> PacientesTratamiento; //Que para los 10 dias se quitaron sintomas
+        List<ClsPaciente> PacientesSecuelas; //Dados de alta pero tuvo 70ox en algun momento
+        List<ClsPaciente> PacientesMortalidad; //Para los 15 dìas seguìa con baja oxigenacion
+
         ClsCovid covid;
         System.Timers.Timer tiempoTranscurrido;
+        System.Timers.Timer tiempoTratamiento;
+        int Horas = 0;
+        int Dias = 0;
         DateTime inicio;
         string[] enfermedadesCronicas = new string[]
         {
             "Diabetes", "Hipertencion", "Obesidad"
 
         };
+        Dictionary<string, string> tratamientos = new Dictionary<string, string>()
+        {
+            {"Fiebre","Ibuprofeno" },
+            {"Tos","Azitromicina" },
+            {"Dolor de cuerpo","Ibuprofeno" },
+            {"Baja Oxigenacion","Observacion" },
+            {"Diabetes","Insulina" },
+            {"Hipertensión","Captopril" },
+            {"Obesidad","Buena Alimentacion" }
+        };
+
 
         bool terminar = true;
 
@@ -47,7 +65,7 @@ namespace SimulacionCOVID_19
         }
         public void InicioSimulacion()
         {
-            tiempoTranscurrido = new System.Timers.Timer(500);
+            tiempoTranscurrido = new System.Timers.Timer(1000);
             inicio = DateTime.Now;
             tiempoTranscurrido.Elapsed += HandleTimer;
             tiempoTranscurrido.Start();
@@ -57,16 +75,67 @@ namespace SimulacionCOVID_19
         {
             try
             {
-                Invoke(new Action(() => lblTiempo.Text = (e.SignalTime - inicio).ToString()));
+                Horas++;
+                if (Horas==24)
+                {
+                    Horas = 0;
+                    Dias++;
+                }
+                
+                Invoke(new Action(() => lblTiempo.Text = Dias +"Dias "+ Horas + "Horas"));
                 covid.oxigenacion();
+
+                if(Dias == 10)
+                {
+                    var personasConSintomas = Pacientes.Where(p => p.Sintomas.Count > 0);
+                    PacientesTratamiento = Pacientes.Except(personasConSintomas).ToList();
+                    //Pacientes = Pacientes.Except(PacientesTratamiento).ToList();
+                }
+
+                if(Dias == 15)
+                {
+                    PacientesMortalidad = Pacientes.Where(p => p.Sintomas.Contains("Baja Oxigenacion")).ToList();
+                    //Pacientes = Pacientes.Except(PacientesMortalidad).ToList();
+                }
+
                 if (terminar)
                 {
                     //Detener simulacion, parar hilos y tiempo
                     tiempoTranscurrido.Stop();
-                
+                    PacientesSecuelas = Pacientes.Except(PacientesMortalidad).Where(p => p.HistorialOxigenacion.Contains(70)).ToList();
                 }
             }
-            catch (Exception)
+            catch (Exception err)
+            {
+            }
+        }
+        public void InicioTratamiento()
+        {
+            tiempoTratamiento = new System.Timers.Timer(250);
+            tiempoTratamiento.Elapsed += HandleTimer2;
+            tiempoTratamiento.Start();
+        }
+
+        private void HandleTimer2(object sender, ElapsedEventArgs e)
+        {
+            try
+            {
+                
+                if (IniciarTratamiento)
+                {
+                    Tratamiento();
+
+                }
+
+                if (terminar)
+                {
+                    //Detener simulacion, parar hilos y tiempo
+                    tiempoTratamiento.Stop();
+
+                }
+
+            }
+            catch (Exception err)
             {
             }
         }
@@ -129,7 +198,6 @@ namespace SimulacionCOVID_19
             if (Obesidad)
             {
                 RepObesidadAlea();
-
             }
             else
             {
@@ -145,14 +213,13 @@ namespace SimulacionCOVID_19
             if (Hipertension)
             {
                 RepHipertensionAlea();
-
             }
 
             if (Diabetes)
             {
                 RepDiabetesAlea();
-
             }
+            
             covid = new ClsCovid(ref Pacientes) { done = actualizarEtiquetas };
             covid.asignarSintomas();
             ClasificarPacientes();
@@ -166,7 +233,7 @@ namespace SimulacionCOVID_19
             var jovenesCronicosF = jovenes.Where(p => p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
             var jovenesSanosM = jovenes.Where(p => p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
             var jovenesSanosF = jovenes.Where(p => p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
-            if(jovenesCronicosM.Count() > 0)
+            if (jovenesCronicosM.Count() > 0)
             {
                 //creacion de controles
                 panel1.Height += 350;
@@ -209,7 +276,7 @@ namespace SimulacionCOVID_19
                     Dock = DockStyle.Top,
                     Font = new Font("Palatino Linotype", 11.35f, FontStyle.Bold),
                     Text = "EFECTIVIDAD: ",
-                    Name = "lbleEfectivadJovenesCronicosM"
+                    Name = "lblEfectivadJovenesCronicosM"
                 };
                 var panelGraficas = new Panel()
                 {
@@ -274,7 +341,30 @@ namespace SimulacionCOVID_19
                 };
 
                 var lstResumenSintomas = jovenesCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfCron = jovenesCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfCron);
+
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoJovenesCronicosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoJovenesCronicosM"
+                };
+
+
 
                 var lblRecomendaciones = new Label()
                 {
@@ -313,8 +403,10 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
-                
+
+                container.Controls.Add(lblEfectividad);
                 container.Controls.Add(lblOxigenacion);
                 container.Controls.Add(lblPeso);
                 container.Controls.Add(lblEstatura);
@@ -325,7 +417,9 @@ namespace SimulacionCOVID_19
                 panelGraficaSecuelas.Controls.Add(lblTitSecuelas);
 
                 panelListaSintomas.Controls.Add(listaSintomas);
+                panelListaTratamiento.Controls.Add(listaTratamiento);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -428,7 +522,28 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomasJovenesCronicosF"
                 };
                 var lstResumenSintomas = jovenesCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = jovenesCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+
+
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoJovenesCronicosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoJovenesCronicosF"
+                };
 
                 var lblTitMortalidad = new Label()
                 {
@@ -481,6 +596,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -494,6 +610,8 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -619,6 +737,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = jovenesSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoJovenesM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoJovenesM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -649,6 +784,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -662,6 +798,8 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -787,6 +925,24 @@ namespace SimulacionCOVID_19
                 var lstResumenSintomas = jovenesSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
 
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoJovenesF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoJovenesF"
+                };
+
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -817,6 +973,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -830,6 +987,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -952,7 +1112,27 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomasAdultosJovenesCronicosM"
                 };
                 var lstResumenSintomas = adultosJovenesCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = adultosJovenesCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosJovenesCronicosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosJovenesCronicosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -989,6 +1169,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -1002,6 +1183,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -1125,7 +1309,26 @@ namespace SimulacionCOVID_19
                     Name = "lblRecomendacionesAdultosJovenesCronicosF"
                 };
                 var lstResumenSintomas = adultosJovenesCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = adultosJovenesCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosJovenesCronicosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosJovenesCronicosF"
+                };
                 var panelRecomendaciones = new Panel()
                 {
                     Dock = DockStyle.Top,
@@ -1156,6 +1359,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -1169,6 +1373,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -1293,6 +1500,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = adultosJovenesSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosJovenesM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosJovenesM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -1323,6 +1547,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -1336,6 +1561,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -1460,7 +1688,25 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = adultosJovenesSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosJovenesF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosJovenesF"
+                };
                 var lblRecomendaciones = new Label()
+
                 {
                     Dock = DockStyle.Top,
                     Font = new Font("Palatino Linotype", 11.35f, FontStyle.Bold),
@@ -1490,6 +1736,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -1503,6 +1750,10 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -1626,7 +1877,26 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomasAdultosCronicosM"
                 };
                 var lstResumenSintomas = adultosCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = adultosCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosCronicosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosCronicosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -1663,6 +1933,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -1677,6 +1948,9 @@ namespace SimulacionCOVID_19
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
 
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
                 panelGraficaMortalidad.Controls.Add(lblTitMortalidad);
@@ -1792,7 +2066,26 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomasAdultosCronicosF"
                 };
                 var lstResumenSintomas = adultosCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = adultosCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosCronicosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosCronicosF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -1830,6 +2123,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -1843,6 +2137,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -1967,6 +2264,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = adultosSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                    var panelListaTratamiento = new Panel()
+                    {
+                        Dock = DockStyle.Left,
+                        Width = 174
+                    };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -1997,6 +2311,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -2010,6 +2325,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -2134,6 +2452,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = adultosSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                    var panelListaTratamiento = new Panel()
+                    {
+                        Dock = DockStyle.Left,
+                        Width = 174
+                    };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -2164,6 +2499,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -2177,6 +2513,10 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
+
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
                 panelGraficaMortalidad.Controls.Add(lblTitMortalidad);
@@ -2298,7 +2638,26 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomasAdultosMayoresCronicosM"
                 };
                 var lstResumenSintomas = adultosMayoresCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC= adultosMayoresCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosMayoresCronicosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosMayoresCronicosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -2335,6 +2694,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -2348,6 +2708,8 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -2464,7 +2826,26 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomasAdultosMayoresCronicosF"
                 };
                 var lstResumenSintomas = adultosMayoresCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = adultosMayoresCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosMayoresCronicosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosMayoresCronicosF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -2502,6 +2883,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -2516,6 +2898,9 @@ namespace SimulacionCOVID_19
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
 
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
                 panelGraficaMortalidad.Controls.Add(lblTitMortalidad);
@@ -2639,6 +3024,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = adultosMayoresSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosMayoresM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosMayoresM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -2669,6 +3071,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -2682,6 +3085,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -2806,6 +3212,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = adultosMayoresSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                    var panelListaTratamiento = new Panel()
+                    {
+                        Dock = DockStyle.Left,
+                        Width = 174
+                    };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoAdultosMayoresF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoAdultosMayoresF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -2836,6 +3259,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -2849,6 +3273,8 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -2969,8 +3395,27 @@ namespace SimulacionCOVID_19
                     Dock = DockStyle.Fill,
                     Name = "lstSintomasancianosCronicosM"
                 };
-                var lstResumenSintomas = ancianosCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenSintomas = ancianosCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = ancianosCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoancianosCronicosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoancianosCronicosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -3008,6 +3453,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -3021,6 +3467,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -3137,7 +3586,26 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomasancianosCronicosF"
                 };
                 var lstResumenSintomas = ancianosCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = ancianosCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoancianosCronicosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoancianosCronicosF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -3175,6 +3643,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -3189,6 +3658,8 @@ namespace SimulacionCOVID_19
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
 
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
                 panelGraficaMortalidad.Controls.Add(lblTitMortalidad);
@@ -3312,6 +3783,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = ancianosSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoancianosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoancianosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -3342,6 +3830,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -3355,6 +3844,8 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -3479,6 +3970,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = ancianosSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientoancianosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientoancianosF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -3509,6 +4017,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -3523,6 +4032,9 @@ namespace SimulacionCOVID_19
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
 
+                    panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
+
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
                 panelGraficaMortalidad.Controls.Add(lblTitMortalidad);
@@ -3535,7 +4047,7 @@ namespace SimulacionCOVID_19
             var longevos = Pacientes.Where(p => p.Edad >= 75).ToList();
             var longevosCronicosM = longevos.Where(p => p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
             var longevosCronicosF = longevos.Where(p => p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
-            var longevosSanosM = longevos.Where(p => p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var longevosSanosM = longevos.Where(p => p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
             var longevosSanosF = longevos.Where(p => p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
             if (longevosCronicosM.Count() > 0)
             {
@@ -3643,7 +4155,28 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomaslongevosCronicosM"
                 };
                 var lstResumenSintomas = longevosCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC = longevosCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+                
+
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientolongevosCronicosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientolongevosCronicosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -3681,6 +4214,8 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+
+                    panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -3694,6 +4229,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
@@ -3810,7 +4348,27 @@ namespace SimulacionCOVID_19
                     Name = "lstSintomaslongevosCronicosF"
                 };
                 var lstResumenSintomas = longevosCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                var lstResumenEnfC= longevosCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                listaSintomas.Items.AddRange(lstResumenEnfC);
+
+                    var panelListaTratamiento= new Panel()
+                    {
+                        Dock = DockStyle.Left,
+                        Width = 174
+                    };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientolongevosCronicosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientolongevosCronicosF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -3848,6 +4406,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                    panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -3861,6 +4420,10 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
                 panelGraficaMortalidad.Controls.Add(graficaMortalidad);
                 panelGraficaMortalidad.Controls.Add(lblTitMortalidad);
@@ -3984,6 +4547,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = longevosSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento = new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientolongevosM"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientolongevosM"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -4014,6 +4594,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
                 
 
@@ -4028,6 +4609,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
 
 
@@ -4089,7 +4673,7 @@ namespace SimulacionCOVID_19
                     Dock = DockStyle.Top,
                     Font = new Font("Palatino Linotype", 11.35f, FontStyle.Bold),
                     Text = "EFECTIVIDAD: ",
-                    Name = "lbleEfectivadlongevosF"
+                    Name = "lblEfectivadlongevosF"
                 };
                 var panelGraficas = new Panel()
                 {
@@ -4153,6 +4737,23 @@ namespace SimulacionCOVID_19
                 };
                 var lstResumenSintomas = longevosSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
                 listaSintomas.Items.AddRange(lstResumenSintomas);
+                var panelListaTratamiento= new Panel()
+                {
+                    Dock = DockStyle.Left,
+                    Width = 174
+                };
+                var lblTitTratamiento = new Label()
+                {
+                    Dock = DockStyle.Top,
+                    Font = new Font("Palatino Linotype", 11.35f, FontStyle.Regular),
+                    Text = "TRATAMIENTO",
+                    Name = "lblTratamientolongevosF"
+                };
+                var listaTratamiento = new ListBox()
+                {
+                    Dock = DockStyle.Fill,
+                    Name = "lstTratamientolongevosF"
+                };
                 var lblRecomendaciones = new Label()
                 {
                     Dock = DockStyle.Top,
@@ -4183,7 +4784,7 @@ namespace SimulacionCOVID_19
                 panelGraficas.Controls.Add(panelGraficaSecuelas);
                 panelGraficas.Controls.Add(panelGraficaMortalidad);
                 panelGraficas.Controls.Add(panelListaSintomas);
-
+                panelGraficas.Controls.Add(panelListaTratamiento);
                 container.Controls.Add(panelGraficas);
 
                 container.Controls.Add(lblOxigenacion);
@@ -4200,6 +4801,9 @@ namespace SimulacionCOVID_19
 
                 panelListaSintomas.Controls.Add(listaSintomas);
                 panelListaSintomas.Controls.Add(lblTitSintomas);
+
+                panelListaTratamiento.Controls.Add(listaTratamiento);
+                panelListaTratamiento.Controls.Add(lblTitTratamiento);
 
                 container.Controls.Add(paciente);
 
@@ -4507,7 +5111,7 @@ namespace SimulacionCOVID_19
                     avgIMC = jovenesSanosF.Average(e => e.Peso) / Math.Pow(jovenesSanosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)Controls.Find("lblOxigenacionAvgJovenesF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)Controls.Find("pbJovenesF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)Controls.Find("pbJovenesF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
 
                     }));
                 }
@@ -4518,7 +5122,7 @@ namespace SimulacionCOVID_19
                     avgIMC = jovenesSanosM.Average(e => e.Peso) / Math.Pow(jovenesSanosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgJovenesM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbJovenesM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbJovenesM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
                 }
                 if (jovenesCronicosF.Count > 0)
@@ -4528,7 +5132,7 @@ namespace SimulacionCOVID_19
                     avgIMC = jovenesCronicosF.Average(e => e.Peso) / Math.Pow(jovenesCronicosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgJovenesCronicosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbJovenesCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbJovenesCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4539,7 +5143,7 @@ namespace SimulacionCOVID_19
                     avgIMC = jovenesCronicosM.Average(e => e.Peso) / Math.Pow(jovenesCronicosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgJovenesCronicosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbJovenesCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbJovenesCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4551,7 +5155,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosJovenesSanosF.Average(e => e.Peso) / Math.Pow(adultosJovenesSanosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosJovenesF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosJovenesF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosJovenesF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4562,7 +5166,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosJovenesSanosM.Average(e => e.Peso) / Math.Pow(adultosJovenesSanosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosJovenesM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx; ;
-                        ((PictureBox)this.Controls.Find("pbAdultosJovenesM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosJovenesM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4573,7 +5177,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosJovenesCronicosF.Average(e => e.Peso) / Math.Pow(adultosJovenesCronicosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosJovenesCronicosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx; ;
-                        ((PictureBox)this.Controls.Find("pbAdultosJovenesCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosJovenesCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4584,7 +5188,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosJovenesCronicosM.Average(e => e.Peso) / Math.Pow(adultosJovenesCronicosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosJovenesCronicosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosJovenesCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosJovenesCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4596,7 +5200,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosSanosF.Average(e => e.Peso) / Math.Pow(adultosSanosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4607,7 +5211,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosSanosM.Average(e => e.Peso) / Math.Pow(adultosSanosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx; ;
-                        ((PictureBox)this.Controls.Find("pbAdultosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4618,7 +5222,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosCronicosF.Average(e => e.Peso) / Math.Pow(adultosCronicosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosCronicosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
                 }
                 if (adultosCronicosM.Count > 0)
@@ -4628,7 +5232,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosCronicosM.Average(e => e.Peso) / Math.Pow(adultosCronicosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosCronicosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4640,7 +5244,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosMayoresSanosF.Average(e => e.Peso) / Math.Pow(adultosMayoresSanosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosMayoresF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosMayoresF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosMayoresF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4651,7 +5255,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosMayoresSanosM.Average(e => e.Peso) / Math.Pow(adultosMayoresSanosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosMayoresM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosMayoresM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosMayoresM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
 
@@ -4663,7 +5267,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosMayoresCronicosF.Average(e => e.Peso) / Math.Pow(adultosMayoresCronicosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosMayoresCronicosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosMayoresCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosMayoresCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4674,7 +5278,7 @@ namespace SimulacionCOVID_19
                     avgIMC = adultosMayoresCronicosM.Average(e => e.Peso) / Math.Pow(adultosMayoresCronicosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgAdultosMayoresCronicosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbAdultosMayoresCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbAdultosMayoresCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4686,7 +5290,7 @@ namespace SimulacionCOVID_19
                     avgIMC = ancianosSanosF.Average(e => e.Peso) / Math.Pow(ancianosSanosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgancianosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbancianosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbancianosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4697,7 +5301,7 @@ namespace SimulacionCOVID_19
                     avgIMC = ancianosSanosM.Average(e => e.Peso) / Math.Pow(ancianosSanosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgancianosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbancianosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbancianosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4708,7 +5312,7 @@ namespace SimulacionCOVID_19
                     avgIMC = ancianosCronicosF.Average(e => e.Peso) / Math.Pow(ancianosCronicosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgancianosCronicosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbancianosCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbancianosCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4719,7 +5323,7 @@ namespace SimulacionCOVID_19
                     avgIMC = ancianosCronicosM.Average(e => e.Peso) / Math.Pow(ancianosCronicosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvgancianosCronicosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pbancianosCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pbancianosCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4731,7 +5335,7 @@ namespace SimulacionCOVID_19
                     avgIMC = longevosSanosF.Average(e => e.Peso) / Math.Pow(longevosSanosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvglongevosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pblongevosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pblongevosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4742,7 +5346,7 @@ namespace SimulacionCOVID_19
                     avgIMC = longevosSanosM.Average(e => e.Peso) / Math.Pow(longevosSanosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvglongevosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pblongevosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pblongevosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4754,7 +5358,7 @@ namespace SimulacionCOVID_19
                     avgIMC = longevosCronicosF.Average(e => e.Peso) / Math.Pow(longevosCronicosF.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvglongevosCronicosF", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pblongevosCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pblongevosCronicosF", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("mujer" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4766,7 +5370,7 @@ namespace SimulacionCOVID_19
                     avgIMC = longevosCronicosM.Average(e => e.Peso) / Math.Pow(longevosCronicosM.Average(e => e.Estatura), 2);
                     Invoke(new Action(() => {
                         ((Label)this.Controls.Find("lblOxigenacionAvglongevosCronicosM", true)[0]).Text = "OXIGENACIÓN PROMEDIO: " + avgOx;
-                        ((PictureBox)this.Controls.Find("pblongevosCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + avgOxImg);
+                        ((PictureBox)this.Controls.Find("pblongevosCronicosM", true)[0]).Image = (Bitmap)Properties.Resources.ResourceManager.GetObject("hombre" + (avgIMC > 30 ? "O" : "") + (avgOxImg < 85 ? "Oxigeno" : avgOxImg.ToString()));
                     }));
 
                 }
@@ -4789,6 +5393,1193 @@ namespace SimulacionCOVID_19
             }
             catch (Exception)
             {
+            }
+        }
+        bool IniciarTratamiento = false;
+        private void button1_Click(object sender, EventArgs e)
+        {
+            IniciarTratamiento = true;
+            Task.Run(InicioTratamiento);
+           // InicioTratamiento();
+        }
+
+        public void Tratamiento()
+        {
+            //se mandan a llamar las categorias que se estan considerando
+            #region declaracionCategorias
+            var jovenesSanosF = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var jovenesSanosM = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var jovenesCronicosF = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var jovenesCronicosM = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosJovenesSanosF = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosJovenesSanosM = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosJovenesCronicosF = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosJovenesCronicosM = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosSanosF = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosSanosM = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosCronicosF = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosCronicosM = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosMayoresSanosF = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosMayoresSanosM = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosMayoresCronicosF = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosMayoresCronicosM = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var ancianosSanosF = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var ancianosSanosM = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var ancianosCronicosF = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var ancianosCronicosM = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var longevosSanosF = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var longevosSanosM = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var longevosCronicosF = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var longevosCronicosM = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            #endregion
+            // cambia las etiquetas 
+            ListBox lstSintomas;
+            try
+            {
+                //jovenes
+                if (jovenesSanosF.Count > 0)
+                {
+                    
+
+                    Invoke(new Action(() =>
+                    {
+                        lstSintomas = (ListBox)Controls.Find("lstSintomasJovenesF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = jovenesSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                        var lstResumenEnfC = jovenesSanosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                        lstSintomas.Items.AddRange(lstResumenSintomas);
+                        lstSintomas.Items.AddRange(lstResumenEnfC);
+                        var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoJovenesF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if(sintoma == "Baja Oxigenacion" && jovenesSanosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoJovenesF", true)[0]).Items.Add("Oxigeno");
+                            }
+
+                           ((ListBox)this.Controls.Find("lstTratamientoJovenesF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (jovenesSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasJovenesM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = jovenesSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = jovenesSanosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoJovenesM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && jovenesSanosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoJovenesM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoJovenesM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (jovenesCronicosF.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasJovenesCronicosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = jovenesCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = jovenesCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoJovenesCronicosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && jovenesCronicosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoJovenesCronicosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoJovenesCronicosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+
+                }
+                if (jovenesCronicosM.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasJovenesCronicosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = jovenesCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = jovenesCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoJovenesCronicosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && jovenesCronicosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoJovenesCronicosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoJovenesCronicosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+
+                }
+                //adultos jovenes
+                if (adultosJovenesSanosF.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosJovenesF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosJovenesSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosJovenesSanosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesF", true)[0]).Items.Clear();            
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosJovenesSanosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+
+                }
+                if (adultosJovenesSanosM.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosJovenesM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosJovenesSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosJovenesSanosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosJovenesSanosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosJovenesCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosJovenesCronicosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosJovenesCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosJovenesCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesCronicosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+
+                            if (sintoma == "Baja Oxigenacion" && adultosJovenesCronicosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesCronicosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesCronicosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosJovenesCronicosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosJovenesCronicosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosJovenesCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosJovenesCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesCronicosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosJovenesCronicosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesCronicosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosJovenesCronicosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                //adultos
+                if (adultosSanosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosSanosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosSanosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosSanosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosSanosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosCronicosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosCronicosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosCronicosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosCronicosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosCronicosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosCronicosM.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosCronicosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosCronicosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosCronicosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosCronicosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosCronicosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                //adultos mayores
+                if (adultosMayoresSanosF.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosMayoresF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosMayoresSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosMayoresSanosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosMayoresSanosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosMayoresSanosM.Count > 0)
+                {
+                   
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosMayoresM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosMayoresSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosMayoresSanosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosMayoresSanosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosMayoresCronicosF.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosMayoresCronicosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosMayoresCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosMayoresCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresCronicosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosMayoresCronicosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresCronicosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresCronicosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (adultosMayoresCronicosM.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasAdultosMayoresCronicosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = adultosMayoresCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = adultosMayoresCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresCronicosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && adultosMayoresCronicosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresCronicosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoAdultosMayoresCronicosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                //ancianos
+                if (ancianosSanosF.Count > 0)
+                {
+                   
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasancianosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = ancianosSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = ancianosSanosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoancianosF", true)[0]).Items.Clear();
+
+                        foreach (var sintoma in lista)
+
+                        {
+                            if (sintoma == "Baja Oxigenacion" && ancianosSanosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoancianosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoancianosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (ancianosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasancianosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = ancianosSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = ancianosSanosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoancianosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && ancianosSanosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoancianosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoancianosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (ancianosCronicosF.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasancianosCronicosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = ancianosCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = ancianosCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoancianosCronicosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && ancianosCronicosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoancianosCronicosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoancianosCronicosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (ancianosCronicosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomasancianosCronicosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = ancianosCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = ancianosCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientoancianosCronicosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && ancianosCronicosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientoancianosCronicosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientoancianosCronicosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                //longevos
+                if (longevosSanosF.Count > 0)
+                {
+                    
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomaslongevosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = longevosSanosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = longevosSanosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientolongevosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && longevosSanosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientolongevosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientolongevosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (longevosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomaslongevosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = longevosSanosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = longevosSanosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientolongevosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && longevosSanosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientolongevosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientolongevosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (longevosCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomaslongevosCronicosF", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = longevosCronicosF.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = longevosCronicosF.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientolongevosCronicosF", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && longevosCronicosF.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientolongevosCronicosF", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientolongevosCronicosF", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+                if (longevosCronicosM.Count > 0)
+                {
+                   
+                    Invoke(new Action(() => {
+                    lstSintomas = (ListBox)Controls.Find("lstSintomaslongevosCronicosM", true)[0];
+                        lstSintomas.Items.Clear();
+                        var lstResumenSintomas = longevosCronicosM.SelectMany(p => p.Sintomas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    var lstResumenEnfC = longevosCronicosM.SelectMany(p => p.EnfermedadesCronicas).GroupBy(p => p).Select(p => $"{p.Key}: {p.Count()} personas").ToArray();
+                    lstSintomas.Items.AddRange(lstResumenSintomas);
+                    lstSintomas.Items.AddRange(lstResumenEnfC);
+                    var lista = lstSintomas.Items.OfType<string>().Select(s => s.Substring(0, s.IndexOf(':')));
+                        ((ListBox)this.Controls.Find("lstTratamientolongevosCronicosM", true)[0]).Items.Clear();
+                        foreach (var sintoma in lista)
+                        {
+                            if (sintoma == "Baja Oxigenacion" && longevosCronicosM.Any(p => p.Oxigenacion < 85))
+                            {
+                                ((ListBox)this.Controls.Find("lstTratamientolongevosCronicosM", true)[0]).Items.Add("Oxigeno");
+                            }
+                            ((ListBox)this.Controls.Find("lstTratamientolongevosCronicosM", true)[0]).Items.Add(tratamientos[sintoma]);
+                        }
+                    }));
+                }
+
+               
+            }
+            catch (Exception)
+            {
+
+            }
+            for (int i = 0; i < 666; i++)
+            {
+                Random alea = new Random();
+                var p = alea.Next(Pacientes.Count);
+                double probabilidad = 0;
+                switch (Pacientes[p].EnfermedadesCronicas.Count)
+                {
+                    case 1:
+                        probabilidad = .89;
+                        break;
+                    case 2:
+                        probabilidad = .79;
+                        break;
+                    case 3:
+                        probabilidad = .59;
+                        break;
+                    default:
+                        probabilidad = .99;
+                        break;
+                }
+                foreach (var s in new List<string>(Pacientes[p].Sintomas))
+                {
+                    double x = alea.NextDouble();
+                    if (x < probabilidad)
+                    {
+                        Pacientes[p].Sintomas.RemoveAt(Pacientes[p].Sintomas.IndexOf(s));
+                    }
+                }
+            }
+
+            terminar = !Pacientes.Any(p => p.Sintomas.Count != 0);
+
+        }
+        public void graficarMortalidad()
+        {
+            //se mandan a llamar las categorias que se estan considerando
+            #region declaracionCategorias
+            var jovenesSanosF = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var jovenesSanosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeJovenesSanosFMortalidad = jovenesSanosFMortalidad.Count * 100 / jovenesSanosF.Count;
+
+            var jovenesSanosM = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var jovenesSanosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajejovenesSanosMMortalidad = jovenesSanosMMortalidad.Count * 100 / jovenesSanosM.Count;
+
+            var jovenesCronicosF = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var jovenesCronicosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeJovenesCronicosFMortalidad = jovenesCronicosFMortalidad.Count * 100 / jovenesCronicosF.Count;
+
+            var jovenesCronicosM = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var jovenesCronicosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeJovenesCronicosMMortalidad = jovenesCronicosMMortalidad.Count * 100 / jovenesCronicosM.Count;
+
+            var adultosJovenesSanosF = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosJovenesSanosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosJovenesSanosFMortalidad = adultosJovenesSanosFMortalidad.Count * 100 / adultosJovenesSanosF.Count;
+
+            var adultosJovenesSanosM = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosJovenesSanosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosJovenesSanosMMortalidad = adultosJovenesSanosMMortalidad.Count * 100 / adultosJovenesSanosM.Count;
+
+            var adultosJovenesCronicosF = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosJovenesCronicosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosJovenesCronicosFMortalidad = adultosJovenesCronicosFMortalidad.Count * 100 / adultosJovenesCronicosF.Count;
+
+            var adultosJovenesCronicosM = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosJovenesCronicosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosJovenesCronicosMMortalidad = adultosJovenesCronicosMMortalidad.Count * 100 / adultosJovenesCronicosM.Count;
+
+            var adultosSanosF = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosSanosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosSanosFMortalidad = adultosSanosFMortalidad.Count * 100 / adultosSanosF.Count;
+
+            var adultosSanosM = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosSanosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosSanosMMortalidad = adultosSanosMMortalidad.Count * 100 / adultosSanosM.Count;
+
+            var adultosCronicosF = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosCronicosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosCronicosFMortalidad = adultosCronicosFMortalidad.Count * 100 / adultosCronicosF.Count;
+
+            var adultosCronicosM = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosCronicosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosCronicosMMortalidad = adultosCronicosMMortalidad.Count * 100 / adultosCronicosM.Count;
+
+            var adultosMayoresSanosF = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosMayoresSanosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosMayoresSanosFMortalidad = adultosMayoresSanosFMortalidad.Count * 100 / adultosMayoresSanosF.Count;
+
+            var adultosMayoresSanosM = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosMayoresSanosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosMayoresSanosMMortalidad = adultosMayoresSanosMMortalidad.Count * 100 / adultosMayoresSanosM.Count;
+
+            var adultosMayoresCronicosF = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosMayoresCronicosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosMayoresCronicosFMortalidad = adultosMayoresCronicosFMortalidad.Count * 100 / adultosMayoresCronicosF.Count;
+
+            var adultosMayoresCronicosM = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosMayoresCronicosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosMayoresCronicosMMortalidad = adultosMayoresCronicosMMortalidad.Count * 100 / adultosMayoresCronicosM.Count;
+
+            var ancianosSanosF = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var ancianosSanosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAncianosSanosFMortalidad = ancianosSanosFMortalidad.Count * 100 / ancianosSanosF.Count;
+
+            var ancianosSanosM = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var ancianosSanosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAncianosSanosMMortalidad = ancianosSanosMMortalidad.Count * 100 / ancianosSanosM.Count;
+
+            var ancianosCronicosF = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var ancianosCronicosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAncianosCronicosFMortalidad = ancianosCronicosFMortalidad.Count * 100 / ancianosCronicosF.Count;
+
+            var ancianosCronicosM = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var ancianosCronicosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAncianosCronicosMMortalidad = ancianosCronicosMMortalidad.Count * 100 / ancianosCronicosM.Count;
+
+            var longevosSanosF = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var longevosSanosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeLongevosSanosFMortalidad = longevosSanosFMortalidad.Count * 100 / longevosSanosF.Count;
+
+            var longevosSanosM = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var longevosSanosMMortalidad = PacientesMortalidad.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeLongevosSanosMMortalidad = longevosSanosMMortalidad.Count * 100 / longevosSanosM.Count;
+
+            var longevosCronicosF = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var longevosCronicosFMortalidad = PacientesMortalidad.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeLongevosCronicosFMortalidad = longevosCronicosFMortalidad.Count * 100 / longevosCronicosF.Count;
+
+            var longevosCronicosM = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var longevosCronicosMEfectivdad = PacientesMortalidad.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeLongevosCronicosMEfectivdad = longevosCronicosMEfectivdad.Count * 100 / longevosCronicosM.Count;
+
+            #endregion
+
+            try
+            {
+                //jovenes
+                if (jovenesSanosF.Count > 0)
+                {
+                    Invoke(new Action(() =>
+                    {
+                        Series serieMortalidad = ((Chart)Controls.Find("chartMortalidadJovenesF", true)[0]).Series.Add("Mortalidad");
+                        serieMortalidad.Label = porcentajeJovenesSanosFMortalidad.ToString();
+                        serieMortalidad.Points.Add(porcentajeJovenesSanosFMortalidad);
+                    }));
+                }
+                if (jovenesSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        Series serieMortalidad = ((Chart)Controls.Find("chartMortalidadJovenesF", true)[0]).Series.Add("Mortalidad");
+                        serieMortalidad.Label = porcentajeJovenesSanosFMortalidad.ToString();
+                        serieMortalidad.Points.Add(porcentajeJovenesSanosFMortalidad);
+                    }));
+                }
+                if (jovenesCronicosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadJovenesCronicosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeJovenesCronicosFMortalidad;
+
+                    }));
+
+                }
+                if (jovenesCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadJovenesCronicosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeJovenesCronicosMMortalidad;
+                    }));
+
+                }
+                //adultos jovenes
+                if (adultosJovenesSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosJovenesF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosJovenesSanosFMortalidad;
+                    }));
+
+                }
+                if (adultosJovenesSanosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosJovenesM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosJovenesSanosMMortalidad;
+                    }));
+                }
+                if (adultosJovenesCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivAdultosJovenesCronicosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosJovenesCronicosFMortalidad;
+                    }));
+                }
+                if (adultosJovenesCronicosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivAdultosJovenesCronicosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosJovenesCronicosMMortalidad;
+                    }));
+                }
+                //adultos
+                if (adultosSanosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosSanosFMortalidad;
+                    }));
+                }
+                if (adultosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosSanosMMortalidad;
+                    }));
+                }
+                if (adultosCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosCronicosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosCronicosFMortalidad;
+                    }));
+                }
+                if (adultosCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosCronicosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosCronicosMMortalidad;
+                    }));
+                }
+                //adultos mayores
+                if (adultosMayoresSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosMayoresSanosFMortalidad;
+                    }));
+                }
+                if (adultosMayoresSanosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosMayoresSanosMMortalidad;
+                    }));
+                }
+                if (adultosMayoresCronicosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresCronicosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosMayoresCronicosFMortalidad;
+                    }));
+                }
+                if (adultosMayoresCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresCronicosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAdultosMayoresCronicosMMortalidad;
+                    }));
+                }
+                //ancianos
+                if (ancianosSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAncianosSanosFMortalidad;
+                    }));
+                }
+                if (ancianosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAncianosSanosMMortalidad;
+                    }));
+                }
+                if (ancianosCronicosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosCronicosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAncianosCronicosFMortalidad;
+                    }));
+                }
+                if (ancianosCronicosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosCronicosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeAncianosCronicosMMortalidad;
+                    }));
+                }
+                //longevos
+                if (longevosSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeLongevosSanosFMortalidad;
+                    }));
+                }
+                if (longevosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosM", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeLongevosSanosMMortalidad;
+                    }));
+                }
+                if (longevosCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosCronicosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeLongevosCronicosFMortalidad;
+                    }));
+                }
+                if (longevosCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosCronicosF", true)[0]).Text = "PORCENTAJE Mortalidad: " + porcentajeLongevosCronicosMEfectivdad;
+                    }));
+                }
+
+
+            }
+            catch (Exception)
+            {
+
+            }
+        }
+    
+        public void graficarSecuelas()
+        {
+            //se mandan a llamar las categorias que se estan considerando
+            #region declaracionCategorias
+            var jovenesSanosF = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var jovenesSanosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeJovenesSanosFEfectividad = jovenesSanosFEfectividad.Count * 100 / jovenesSanosF.Count;
+
+            var jovenesSanosM = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var jovenesSanosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajejovenesSanosMEfectividad = jovenesSanosMEfectividad.Count * 100 / jovenesSanosM.Count;
+
+            var jovenesCronicosF = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var jovenesCronicosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeJovenesCronicosFEfectividad = jovenesCronicosFEfectividad.Count * 100 / jovenesCronicosF.Count;
+
+            var jovenesCronicosM = Pacientes.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var jovenesCronicosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 18 && p.Edad < 25 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeJovenesCronicosMEfectividad = jovenesCronicosMEfectividad.Count * 100 / jovenesCronicosM.Count;
+
+            var adultosJovenesSanosF = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosJovenesSanosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosJovenesSanosFEfectividad = adultosJovenesSanosFEfectividad.Count * 100 / adultosJovenesSanosF.Count;
+
+            var adultosJovenesSanosM = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosJovenesSanosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosJovenesSanosMEfectividad = adultosJovenesSanosMEfectividad.Count * 100 / adultosJovenesSanosM.Count;
+
+            var adultosJovenesCronicosF = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosJovenesCronicosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosJovenesCronicosFEfectividad = adultosJovenesCronicosFEfectividad.Count * 100 / adultosJovenesCronicosF.Count;
+
+            var adultosJovenesCronicosM = Pacientes.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosJovenesCronicosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 25 && p.Edad < 40 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosJovenesCronicosMEfectividad = adultosJovenesCronicosMEfectividad.Count * 100 / adultosJovenesCronicosM.Count;
+
+            var adultosSanosF = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosSanosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosSanosFEfectividad = adultosSanosFEfectividad.Count * 100 / adultosSanosF.Count;
+
+            var adultosSanosM = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosSanosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosSanosMEfectividad = adultosSanosMEfectividad.Count * 100 / adultosSanosM.Count;
+
+            var adultosCronicosF = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosCronicosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosCronicosFEfectividad = adultosCronicosFEfectividad.Count * 100 / adultosCronicosF.Count;
+
+            var adultosCronicosM = Pacientes.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosCronicosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 40 && p.Edad < 55 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosCronicosMEfectividad = adultosCronicosMEfectividad.Count * 100 / adultosCronicosM.Count;
+
+            var adultosMayoresSanosF = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var adultosMayoresSanosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosMayoresSanosFEfectividad = adultosMayoresSanosFEfectividad.Count * 100 / adultosMayoresSanosF.Count;
+
+            var adultosMayoresSanosM = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var adultosMayoresSanosMefectividad = PacientesTratamiento.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosMayoresSanosMefectividad = adultosMayoresSanosMefectividad.Count * 100 / adultosMayoresSanosM.Count;
+
+            var adultosMayoresCronicosF = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var adultosMayoresCronicosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAdultosMayoresCronicosFEfectividad = adultosMayoresCronicosFEfectividad.Count * 100 / adultosMayoresCronicosF.Count;
+
+            var adultosMayoresCronicosM = Pacientes.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var adultosMayoresCronicosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 55 && p.Edad < 65 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAdultosMayoresCronicosMEfectividad = adultosMayoresCronicosMEfectividad.Count * 100 / adultosMayoresCronicosM.Count;
+
+            var ancianosSanosF = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var ancianosSanosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeAncianosSanosFEfectividad = ancianosSanosFEfectividad.Count * 100 / ancianosSanosF.Count;
+
+            var ancianosSanosM = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var ancianosSanosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeAncianosSanosMEfectividad = ancianosSanosMEfectividad.Count * 100 / ancianosSanosM.Count;
+
+            var ancianosCronicosF = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var ancianosCronicosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeAncianosCronicosFEfectividad = ancianosCronicosFEfectividad.Count * 100 / ancianosCronicosF.Count;
+
+            var ancianosCronicosM = Pacientes.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var ancianosCronicosMefectividad = PacientesTratamiento.Where(p => p.Edad >= 65 && p.Edad < 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeAncianosCronicosMefectividad = ancianosCronicosMefectividad.Count * 100 / ancianosCronicosM.Count;
+
+            var longevosSanosF = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var longevosSanosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 0).ToList();
+            var porcentajeLongevosSanosFEfectividad = longevosSanosFEfectividad.Count * 100 / longevosSanosF.Count;
+
+            var longevosSanosM = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var longevosSanosMEfectividad = PacientesTratamiento.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count == 0 && p.Genero == 1).ToList();
+            var porcentajeLongevosSanosMEfectividad = longevosSanosMEfectividad.Count * 100 / longevosSanosM.Count;
+
+            var longevosCronicosF = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var longevosCronicosFEfectividad = PacientesTratamiento.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 0).ToList();
+            var porcentajeLongevosCronicosFEfectividad = longevosCronicosFEfectividad.Count * 100 / longevosCronicosF.Count;
+
+            var longevosCronicosM = Pacientes.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var longevosCronicosMEfectivdad = PacientesTratamiento.Where(p => p.Edad >= 75 && p.EnfermedadesCronicas.Count > 0 && p.Genero == 1).ToList();
+            var porcentajeLongevosCronicosMEfectivdad = longevosCronicosMEfectivdad.Count * 100 / longevosCronicosM.Count;
+
+            #endregion
+
+            try
+            {
+                //jovenes
+                if (jovenesSanosF.Count > 0)
+                {
+                    Invoke(new Action(() =>
+                    {
+                        ((Label)Controls.Find("lblEfectivadJovenesF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeJovenesSanosFEfectividad;
+                        //Series serieMortalidad = ((Chart)Controls.Find("chartMortalidadJovenesF", true)[0]).Series.Add("Mortalidad");
+                        //serieMortalidad.Label = porcentajeJovenesSanosFEfectividad.ToString();
+                        //serieMortalidad.Points.Add(porcentajeJovenesSanosFEfectividad);
+                        Series serieSecuelas = ((Chart)Controls.Find("chartSecuelasJovenesF", true)[0]).Series.Add("Secuelas");
+                        serieSecuelas.Label = porcentajeJovenesSanosFEfectividad.ToString();
+                        serieSecuelas.Points.Add(porcentajeJovenesSanosFEfectividad);
+                    }));
+                }
+                if (jovenesSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadJovenesM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajejovenesSanosMEfectividad;
+
+                    }));
+                }
+                if (jovenesCronicosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadJovenesCronicosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeJovenesCronicosFEfectividad;
+
+                    }));
+
+                }
+                if (jovenesCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadJovenesCronicosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeJovenesCronicosMEfectividad;
+                    }));
+
+                }
+                //adultos jovenes
+                if (adultosJovenesSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosJovenesF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosJovenesSanosFEfectividad;
+                    }));
+
+                }
+                if (adultosJovenesSanosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosJovenesM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosJovenesSanosMEfectividad;
+                    }));
+                }
+                if (adultosJovenesCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivAdultosJovenesCronicosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosJovenesCronicosFEfectividad;
+                    }));
+                }
+                if (adultosJovenesCronicosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivAdultosJovenesCronicosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosJovenesCronicosMEfectividad;
+                    }));
+                }
+                //adultos
+                if (adultosSanosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosSanosFEfectividad;
+                    }));
+                }
+                if (adultosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosSanosMEfectividad;
+                    }));
+                }
+                if (adultosCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosCronicosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosCronicosFEfectividad;
+                    }));
+                }
+                if (adultosCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosCronicosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosCronicosMEfectividad;
+                    }));
+                }
+                //adultos mayores
+                if (adultosMayoresSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosMayoresSanosFEfectividad;
+                    }));
+                }
+                if (adultosMayoresSanosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosMayoresSanosMefectividad;
+                    }));
+                }
+                if (adultosMayoresCronicosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresCronicosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosMayoresCronicosFEfectividad;
+                    }));
+                }
+                if (adultosMayoresCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadAdultosMayoresCronicosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAdultosMayoresCronicosMEfectividad;
+                    }));
+                }
+                //ancianos
+                if (ancianosSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAncianosSanosFEfectividad;
+                    }));
+                }
+                if (ancianosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAncianosSanosMEfectividad;
+                    }));
+                }
+                if (ancianosCronicosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosCronicosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAncianosCronicosFEfectividad;
+                    }));
+                }
+                if (ancianosCronicosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadancianosCronicosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeAncianosCronicosMefectividad;
+                    }));
+                }
+                //longevos
+                if (longevosSanosF.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeLongevosSanosFEfectividad;
+                    }));
+                }
+                if (longevosSanosM.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosM", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeLongevosSanosMEfectividad;
+                    }));
+                }
+                if (longevosCronicosF.Count > 0)
+                {
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosCronicosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeLongevosCronicosFEfectividad;
+                    }));
+                }
+                if (longevosCronicosM.Count > 0)
+                {
+
+                    Invoke(new Action(() => {
+                        ((Label)Controls.Find("lblEfectivadlongevosCronicosF", true)[0]).Text = "PORCENTAJE EFECTIVIDAD: " + porcentajeLongevosCronicosMEfectivdad;
+                    }));
+                }
+
+
+            }
+            catch (Exception)
+            {
+
             }
         }
     }

@@ -34,11 +34,11 @@ namespace SimulacionCOVID_19
             this.panel1 = new System.Windows.Forms.Panel();
             this.tiempo = new System.Windows.Forms.Timer(this.components);
             this.panel2 = new System.Windows.Forms.Panel();
+            this.button1 = new System.Windows.Forms.Button();
             this.label1 = new System.Windows.Forms.Label();
             this.lblTiempo = new System.Windows.Forms.Label();
             this.btnIniciarSimulacion = new ns1.BunifuFlatButton();
             this.panel3 = new System.Windows.Forms.Panel();
-            this.button1 = new System.Windows.Forms.Button();
             this.panel2.SuspendLayout();
             this.panel3.SuspendLayout();
             this.SuspendLayout();
@@ -76,6 +76,17 @@ namespace SimulacionCOVID_19
             this.panel2.Name = "panel2";
             this.panel2.Size = new System.Drawing.Size(974, 45);
             this.panel2.TabIndex = 2;
+            // 
+            // button1
+            // 
+            this.button1.BackColor = System.Drawing.Color.Teal;
+            this.button1.Location = new System.Drawing.Point(233, 0);
+            this.button1.Name = "button1";
+            this.button1.Size = new System.Drawing.Size(144, 45);
+            this.button1.TabIndex = 4;
+            this.button1.Text = "INICIAR TRATAMIENTO";
+            this.button1.UseVisualStyleBackColor = false;
+            this.button1.Click += new System.EventHandler(this.button1_Click);
             // 
             // label1
             // 
@@ -143,16 +154,6 @@ namespace SimulacionCOVID_19
             this.panel3.Name = "panel3";
             this.panel3.Size = new System.Drawing.Size(974, 412);
             this.panel3.TabIndex = 3;
-            // 
-            // button1
-            // 
-            this.button1.BackColor = System.Drawing.Color.Teal;
-            this.button1.Location = new System.Drawing.Point(233, 0);
-            this.button1.Name = "button1";
-            this.button1.Size = new System.Drawing.Size(144, 45);
-            this.button1.TabIndex = 4;
-            this.button1.Text = "INICIAR TRATAMIENTO";
-            this.button1.UseVisualStyleBackColor = false;
             // 
             // Simulacion
             // 

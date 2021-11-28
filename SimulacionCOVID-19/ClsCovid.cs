@@ -21,23 +21,52 @@ namespace SimulacionCOVID_19
         public void oxigenacion()
         {
             foreach (var p in pacientes) {
-                var margen = 0;
                 switch (p.EnfermedadesCronicas.Count)
                 {
                     case 1:
-                        margen = 2;
+                        if (p.Sintomas.Contains("Baja Oxigenacion"))
+                        {
+                            p.Oxigenacion = alea.Next(70, 100);
+                        }
+                        else
+                        {
+                            p.Oxigenacion = alea.Next(95, 100);
+                        }
                         break;
                     case 2:
-                        margen = 3;
+                        if (p.Sintomas.Contains("Baja Oxigenacion"))
+                        {
+                            p.Oxigenacion = alea.Next(65, 100);
+                        }
+                        else
+                        {
+                            p.Oxigenacion = alea.Next(95, 100);
+                        }
                         break;
                     case 3:
-                        margen = 4;
+                        if (p.Sintomas.Contains("Baja Oxigenacion"))
+                        {
+                            p.Oxigenacion = alea.Next(60, 100);
+                        }
+                        else
+                        {
+                            p.Oxigenacion = alea.Next(95, 100);
+                        }
                         break;
                     default:
-                        margen = 1;
+                        if (p.Sintomas.Contains("Baja Oxigenacion"))
+                        {
+                            p.Oxigenacion = alea.Next(80, 100);
+                        }
+                        else
+                        {
+                            p.Oxigenacion = alea.Next(97, 100);
+                        }
                         break;
+
                 }
-                p.Oxigenacion = alea.Next(p.Oxigenacion - margen, p.Oxigenacion > (101 - margen ) ? 101 : p.Oxigenacion + margen );
+
+                p.HistorialOxigenacion.Add(p.Oxigenacion);
             }
             done();
         }
@@ -48,7 +77,14 @@ namespace SimulacionCOVID_19
                 int cantSintomas = alea.Next(Sintomas.Length + 1);
                 for (int i = 0; i < cantSintomas; i++)
                 {
-                    p.Sintomas.Add(Sintomas[i]);
+                    var sintoma = Sintomas[alea.Next(Sintomas.Length)];
+                    if (p.Sintomas.Contains(sintoma))
+                    {
+                        i--;
+                    }
+                    else { 
+                        p.Sintomas.Add(sintoma);
+                    }
                 }
             }
         }

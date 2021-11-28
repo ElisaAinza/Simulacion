@@ -263,6 +263,26 @@ namespace SimulacionCOVID_19.Properties {
         /// <summary>
         ///   Busca un recurso adaptado de tipo System.Drawing.Bitmap.
         /// </summary>
+        internal static System.Drawing.Bitmap hombreOOxigeno {
+            get {
+                object obj = ResourceManager.GetObject("hombreOOxigeno", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Busca un recurso adaptado de tipo System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap hombreOxigeno {
+            get {
+                object obj = ResourceManager.GetObject("hombreOxigeno", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Busca un recurso adaptado de tipo System.Drawing.Bitmap.
+        /// </summary>
         internal static System.Drawing.Bitmap hombreSaludable {
             get {
                 object obj = ResourceManager.GetObject("hombreSaludable", resourceCulture);
@@ -427,6 +447,26 @@ namespace SimulacionCOVID_19.Properties {
         internal static System.Drawing.Bitmap mujerObesa1 {
             get {
                 object obj = ResourceManager.GetObject("mujerObesa1", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Busca un recurso adaptado de tipo System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap mujerOOxigeno {
+            get {
+                object obj = ResourceManager.GetObject("mujerOOxigeno", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Busca un recurso adaptado de tipo System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap mujerOxigeno {
+            get {
+                object obj = ResourceManager.GetObject("mujerOxigeno", resourceCulture);
                 return ((System.Drawing.Bitmap)(obj));
             }
         }
